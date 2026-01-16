@@ -13,13 +13,13 @@ import type { AccessoryInfo, LightsStatus, LightSettings } from './types.js'
  */
 class MockHttpClient implements HttpClient {
   getMock = mock((_url: string) =>
-    Promise.resolve({ ok: true, status: 200, data: {} as any })
+    Promise.resolve({ ok: true, status: 200, data: {} as unknown })
   )
   putMock = mock((_url: string, _body: unknown) =>
-    Promise.resolve({ ok: true, status: 200, data: {} as any })
+    Promise.resolve({ ok: true, status: 200, data: {} as unknown })
   )
   postMock = mock((_url: string, _body?: unknown) =>
-    Promise.resolve({ ok: true, status: 200, data: {} as any })
+    Promise.resolve({ ok: true, status: 200, data: {} as unknown })
   )
 
   async get<T>(url: string): Promise<HttpResponse<T>> {
@@ -132,7 +132,7 @@ describe('Keylight', () => {
       mockClient.postMock.mockResolvedValue({
         ok: true,
         status: 200,
-        data: null as any,
+        data: null as unknown,
       })
 
       await keylight.identify()
@@ -148,7 +148,7 @@ describe('Keylight', () => {
       mockClient.postMock.mockResolvedValue({
         ok: false,
         status: 400,
-        data: null as any,
+        data: null as unknown,
       })
 
       await expect(keylight.identify()).rejects.toThrow(KeylightBadRequestError)
@@ -194,7 +194,7 @@ describe('Keylight', () => {
       mockClient.getMock.mockResolvedValue({
         ok: false,
         status: 400,
-        data: null as any,
+        data: null as unknown,
       })
 
       await expect(keylight.getAccessoryInfo()).rejects.toThrow(
