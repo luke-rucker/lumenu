@@ -1,0 +1,9 @@
+{
+  "name": "@lumenu/keylight",
+  "devDependencies": {
+    "@types/bun": "catalog:"
+  },
+  "peerDependencies": {
+    "typescript": "catalog:"
+  }
+}
