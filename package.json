@@ -1,22 +1,21 @@
 {
-  "name": "lumenu",
   "private": true,
-  "type": "module",
   "workspaces": [
     "packages/*"
   ],
+  "type": "module",
   "scripts": {
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt .",
     "format:check": "oxfmt --check ."
   },
-  "catalog": {
-    "typescript": "^5",
-    "@types/bun": "latest"
-  },
   "devDependencies": {
     "oxfmt": "^0.24.0",
     "oxlint": "^1.39.0"
+  },
+  "catalog": {
+    "typescript": "^5",
+    "@types/bun": "latest"
   }
 }
