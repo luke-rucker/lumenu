@@ -1,5 +1,4 @@
-import bonjour = require('bonjour')
-import type { RemoteService } from 'bonjour'
+import { Mdns } from '../src/index.js'
 
 /**
  * Discover Elgato Key Lights on the local network using mDNS
@@ -13,55 +12,18 @@ import type { RemoteService } from 'bonjour'
 const DISCOVERY_TIMEOUT = 5000 // 5 seconds
 const SERVICE_TYPE = 'elg'
 
-const discoveredIPs = new Set<string>()
-
-// Initialize Bonjour
-const bonjourInstance = bonjour()
-
-// Browse for Elgato devices
-const browser = bonjourInstance.find({ type: SERVICE_TYPE })
-
-browser.on('up', (service: RemoteService) => {
-  // Extract IP addresses from the service
-  // Bonjour may provide multiple addresses (IPv4 and IPv6)
-  if (service.addresses && service.addresses.length > 0) {
-    for (const address of service.addresses) {
-      // Filter out IPv6 addresses and localhost
-      if (
-        !address.includes(':') &&
-        address !== '127.0.0.1' &&
-        address !== '0.0.0.0'
-      ) {
-        discoveredIPs.add(address)
-      }
-    }
-  }
-  // Fallback to referer.address if addresses array is not available
-  else if (service.referer?.address) {
-    const address = service.referer.address
-    if (
-      !address.includes(':') &&
-      address !== '127.0.0.1' &&
-      address !== '0.0.0.0'
-    ) {
-      discoveredIPs.add(address)
-    }
-  }
+const ips = await Mdns.discover({
+  serviceType: SERVICE_TYPE,
+  timeout: DISCOVERY_TIMEOUT,
 })
 
-// Wait for discovery timeout, then print results and exit
-setTimeout(() => {
-  browser.stop()
-  bonjourInstance.destroy()
-
-  if (discoveredIPs.size === 0) {
-    console.log('No Elgato Key Lights found on the network')
-  } else {
-    // Print each unique IP address on a separate line
-    for (const ip of Array.from(discoveredIPs)) {
-      console.log(ip)
-    }
+if (ips.length === 0) {
+  console.log('No Elgato Key Lights found on the network')
+} else {
+  // Print each unique IP address on a separate line
+  for (const ip of ips) {
+    console.log(ip)
   }
+}
 
-  process.exit(0)
-}, DISCOVERY_TIMEOUT)
+process.exit(0)
