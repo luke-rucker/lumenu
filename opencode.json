@@ -1,0 +1,30 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": {
+    "oxlint": {
+      "command": ["bunx", "oxc_language_server"],
+      "extensions": [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"],
+      "initializationOptions": {
+        "settings": {
+          "run": "onType",
+          "enable": true
+        }
+      }
+    },
+    "typescript": {
+      "command": ["bunx", "typescript-language-server", "--stdio"],
+      "extensions": [".ts", ".tsx", ".mts", ".cts"],
+      "initializationOptions": {
+        "preferences": {
+          "includeInlayParameterNameHints": "all",
+          "includeInlayParameterNameHintsWhenArgumentMatchesName": true,
+          "includeInlayFunctionParameterTypeHints": true,
+          "includeInlayVariableTypeHints": true,
+          "includeInlayPropertyDeclarationTypeHints": true,
+          "includeInlayFunctionLikeReturnTypeHints": true,
+          "includeInlayEnumMemberValueHints": true
+        }
+      }
+    }
+  }
+}

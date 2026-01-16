@@ -1,6 +1,13 @@
 {
   "name": "@lumenu/mdns",
+  "scripts": {
+    "discover": "bun run scripts/discover.ts"
+  },
+  "dependencies": {
+    "bonjour": "^3.5.0"
+  },
   "devDependencies": {
+    "@types/bonjour": "^3.5.13",
     "@types/bun": "catalog:"
   },
   "peerDependencies": {
