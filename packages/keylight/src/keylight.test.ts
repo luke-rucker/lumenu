@@ -1,0 +1,573 @@
+import { describe, expect, test, mock } from 'bun:test'
+import { Keylight, Temperature } from './keylight.js'
+import type { HttpClient, HttpResponse } from './http-client.js'
+import {
+  KeylightConnectionError,
+  KeylightBadRequestError,
+  KeylightValidationError,
+} from './errors.js'
+import type { AccessoryInfo, LightsStatus, LightSettings } from './types.js'
+
+/**
+ * Mock HTTP client for testing
+ */
+class MockHttpClient implements HttpClient {
+  getMock = mock((_url: string) =>
+    Promise.resolve({ ok: true, status: 200, data: {} as any })
+  )
+  putMock = mock((_url: string, _body: unknown) =>
+    Promise.resolve({ ok: true, status: 200, data: {} as any })
+  )
+  postMock = mock((_url: string, _body?: unknown) =>
+    Promise.resolve({ ok: true, status: 200, data: {} as any })
+  )
+
+  async get<T>(url: string): Promise<HttpResponse<T>> {
+    return this.getMock(url) as Promise<HttpResponse<T>>
+  }
+
+  async put<T>(url: string, body: unknown): Promise<HttpResponse<T>> {
+    return this.putMock(url, body) as Promise<HttpResponse<T>>
+  }
+
+  async post<T>(url: string, body?: unknown): Promise<HttpResponse<T>> {
+    return this.postMock(url, body) as Promise<HttpResponse<T>>
+  }
+
+  reset() {
+    this.getMock.mockReset()
+    this.putMock.mockReset()
+    this.postMock.mockReset()
+  }
+}
+
+describe('Temperature', () => {
+  describe('kelvinToApi', () => {
+    test('converts 4000K correctly', () => {
+      expect(Temperature.kelvinToApi(4000)).toBe(240)
+    })
+
+    test('converts 2900K correctly (warmest)', () => {
+      expect(Temperature.kelvinToApi(2900)).toBe(335)
+    })
+
+    test('converts 7000K correctly (coolest)', () => {
+      expect(Temperature.kelvinToApi(7000)).toBe(133)
+    })
+
+    test('throws error for value below range', () => {
+      expect(() => Temperature.kelvinToApi(2800)).toThrow(
+        KeylightValidationError
+      )
+    })
+
+    test('throws error for value above range', () => {
+      expect(() => Temperature.kelvinToApi(7100)).toThrow(
+        KeylightValidationError
+      )
+    })
+  })
+
+  describe('apiToKelvin', () => {
+    test('converts 240 correctly', () => {
+      expect(Temperature.apiToKelvin(240)).toBe(4000)
+    })
+
+    test('converts 335 correctly (warmest)', () => {
+      expect(Temperature.apiToKelvin(335)).toBe(2899)
+    })
+
+    test('converts 143 correctly (coolest)', () => {
+      expect(Temperature.apiToKelvin(143)).toBe(6536)
+    })
+
+    test('throws error for value below range', () => {
+      expect(() => Temperature.apiToKelvin(142)).toThrow(
+        KeylightValidationError
+      )
+    })
+
+    test('throws error for value above range', () => {
+      expect(() => Temperature.apiToKelvin(345)).toThrow(
+        KeylightValidationError
+      )
+    })
+  })
+
+  describe('round-trip conversion', () => {
+    test('kelvin -> api -> kelvin is consistent', () => {
+      const original = 4000
+      const api = Temperature.kelvinToApi(original)
+      const result = Temperature.apiToKelvin(api)
+      expect(result).toBe(original)
+    })
+  })
+})
+
+describe('Keylight', () => {
+  let mockClient: MockHttpClient
+  let keylight: Keylight
+
+  const setup = () => {
+    mockClient = new MockHttpClient()
+    keylight = new Keylight('192.168.1.61', mockClient)
+  }
+
+  describe('constructor', () => {
+    test('creates instance with IP address', () => {
+      const kl = new Keylight('192.168.1.61')
+      expect(kl).toBeInstanceOf(Keylight)
+    })
+
+    test('accepts custom HTTP client', () => {
+      const customClient = new MockHttpClient()
+      const kl = new Keylight('192.168.1.61', customClient)
+      expect(kl).toBeInstanceOf(Keylight)
+    })
+  })
+
+  describe('identify', () => {
+    test('calls POST /identify endpoint', async () => {
+      setup()
+      mockClient.postMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: null as any,
+      })
+
+      await keylight.identify()
+
+      expect(mockClient.postMock).toHaveBeenCalledWith(
+        'http://192.168.1.61:9123/elgato/identify',
+        undefined
+      )
+    })
+
+    test('throws KeylightBadRequestError on 400', async () => {
+      setup()
+      mockClient.postMock.mockResolvedValue({
+        ok: false,
+        status: 400,
+        data: null as any,
+      })
+
+      await expect(keylight.identify()).rejects.toThrow(KeylightBadRequestError)
+    })
+
+    test('throws KeylightConnectionError on network error', async () => {
+      setup()
+      mockClient.postMock.mockRejectedValue(new Error('Network error'))
+
+      await expect(keylight.identify()).rejects.toThrow(KeylightConnectionError)
+    })
+  })
+
+  describe('getAccessoryInfo', () => {
+    test('returns accessory info', async () => {
+      setup()
+      const mockInfo: AccessoryInfo = {
+        productName: 'Elgato Key Light',
+        hardwareBoardType: 53,
+        firmwareBuildNumber: 192,
+        firmwareVersion: '1.0.3',
+        serialNumber: 'XXXXXXXXXXXX',
+        displayName: 'My Light',
+        features: ['lights'],
+      }
+
+      mockClient.getMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: mockInfo,
+      })
+
+      const result = await keylight.getAccessoryInfo()
+
+      expect(mockClient.getMock).toHaveBeenCalledWith(
+        'http://192.168.1.61:9123/elgato/accessory-info'
+      )
+      expect(result).toEqual(mockInfo)
+    })
+
+    test('throws KeylightBadRequestError on 400', async () => {
+      setup()
+      mockClient.getMock.mockResolvedValue({
+        ok: false,
+        status: 400,
+        data: null as any,
+      })
+
+      await expect(keylight.getAccessoryInfo()).rejects.toThrow(
+        KeylightBadRequestError
+      )
+    })
+  })
+
+  describe('updateAccessoryInfo', () => {
+    test('updates accessory info', async () => {
+      setup()
+      const update = { displayName: 'New Name' }
+      const mockResponse: AccessoryInfo = {
+        productName: 'Elgato Key Light',
+        hardwareBoardType: 53,
+        firmwareBuildNumber: 192,
+        firmwareVersion: '1.0.3',
+        serialNumber: 'XXXXXXXXXXXX',
+        displayName: 'New Name',
+        features: ['lights'],
+      }
+
+      mockClient.putMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: mockResponse,
+      })
+
+      const result = await keylight.updateAccessoryInfo(update)
+
+      expect(mockClient.putMock).toHaveBeenCalledWith(
+        'http://192.168.1.61:9123/elgato/accessory-info',
+        update
+      )
+      expect(result).toEqual(mockResponse)
+    })
+  })
+
+  describe('getLights', () => {
+    test('returns lights status', async () => {
+      setup()
+      const mockStatus: LightsStatus = {
+        numberOfLights: 1,
+        lights: [
+          {
+            on: 1,
+            brightness: 50,
+            temperature: 200,
+          },
+        ],
+      }
+
+      mockClient.getMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: mockStatus,
+      })
+
+      const result = await keylight.getLights()
+
+      expect(mockClient.getMock).toHaveBeenCalledWith(
+        'http://192.168.1.61:9123/elgato/lights'
+      )
+      expect(result).toEqual(mockStatus)
+    })
+  })
+
+  describe('updateLights', () => {
+    test('updates lights status', async () => {
+      setup()
+      const update = {
+        numberOfLights: 1,
+        lights: [{ on: 1 as const, brightness: 75, temperature: 200 }],
+      }
+      const mockResponse: LightsStatus = {
+        numberOfLights: 1,
+        lights: [{ on: 1, brightness: 75, temperature: 200 }],
+      }
+
+      mockClient.putMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: mockResponse,
+      })
+
+      const result = await keylight.updateLights(update)
+
+      expect(mockClient.putMock).toHaveBeenCalledWith(
+        'http://192.168.1.61:9123/elgato/lights',
+        update
+      )
+      expect(result).toEqual(mockResponse)
+    })
+
+    test('validates brightness range', async () => {
+      setup()
+      const update = {
+        numberOfLights: 1,
+        lights: [{ brightness: 101 }],
+      }
+
+      await expect(keylight.updateLights(update)).rejects.toThrow(
+        KeylightValidationError
+      )
+    })
+
+    test('validates temperature range', async () => {
+      setup()
+      const update = {
+        numberOfLights: 1,
+        lights: [{ temperature: 400 }],
+      }
+
+      await expect(keylight.updateLights(update)).rejects.toThrow(
+        KeylightValidationError
+      )
+    })
+  })
+
+  describe('getSettings', () => {
+    test('returns settings', async () => {
+      setup()
+      const mockSettings: LightSettings = {
+        powerOnBehavior: 1,
+        powerOnBrightness: 20,
+        powerOnTemperature: 213,
+        switchOnDurationMs: 100,
+        switchOffDurationMs: 300,
+        colorChangeDurationMs: 100,
+      }
+
+      mockClient.getMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: mockSettings,
+      })
+
+      const result = await keylight.getSettings()
+
+      expect(mockClient.getMock).toHaveBeenCalledWith(
+        'http://192.168.1.61:9123/elgato/lights/settings'
+      )
+      expect(result).toEqual(mockSettings)
+    })
+  })
+
+  describe('updateSettings', () => {
+    test('updates settings', async () => {
+      setup()
+      const update = { powerOnBehavior: 0 as const }
+      const mockResponse: LightSettings = {
+        powerOnBehavior: 0,
+        powerOnBrightness: 20,
+        powerOnTemperature: 213,
+        switchOnDurationMs: 100,
+        switchOffDurationMs: 300,
+        colorChangeDurationMs: 100,
+      }
+
+      mockClient.putMock.mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: mockResponse,
+      })
+
+      const result = await keylight.updateSettings(update)
+
+      expect(mockClient.putMock).toHaveBeenCalledWith(
+        'http://192.168.1.61:9123/elgato/lights/settings',
+        update
+      )
+      expect(result).toEqual(mockResponse)
+    })
+
+    test('validates powerOnBrightness range', async () => {
+      setup()
+      const update = { powerOnBrightness: 150 }
+
+      await expect(keylight.updateSettings(update)).rejects.toThrow(
+        KeylightValidationError
+      )
+    })
+
+    test('validates powerOnTemperature range', async () => {
+      setup()
+      const update = { powerOnTemperature: 500 }
+
+      await expect(keylight.updateSettings(update)).rejects.toThrow(
+        KeylightValidationError
+      )
+    })
+  })
+
+  describe('convenience methods', () => {
+    describe('turnOn', () => {
+      test('turns on the light', async () => {
+        setup()
+        const mockResponse: LightsStatus = {
+          numberOfLights: 1,
+          lights: [{ on: 1, brightness: 50, temperature: 200 }],
+        }
+
+        mockClient.putMock.mockResolvedValue({
+          ok: true,
+          status: 200,
+          data: mockResponse,
+        })
+
+        const result = await keylight.turnOn()
+
+        expect(mockClient.putMock).toHaveBeenCalledWith(
+          'http://192.168.1.61:9123/elgato/lights',
+          { numberOfLights: 1, lights: [{ on: 1 }] }
+        )
+        expect(result).toEqual(mockResponse)
+      })
+    })
+
+    describe('turnOff', () => {
+      test('turns off the light', async () => {
+        setup()
+        const mockResponse: LightsStatus = {
+          numberOfLights: 1,
+          lights: [{ on: 0, brightness: 50, temperature: 200 }],
+        }
+
+        mockClient.putMock.mockResolvedValue({
+          ok: true,
+          status: 200,
+          data: mockResponse,
+        })
+
+        const result = await keylight.turnOff()
+
+        expect(mockClient.putMock).toHaveBeenCalledWith(
+          'http://192.168.1.61:9123/elgato/lights',
+          { numberOfLights: 1, lights: [{ on: 0 }] }
+        )
+        expect(result).toEqual(mockResponse)
+      })
+    })
+
+    describe('setBrightness', () => {
+      test('sets brightness', async () => {
+        setup()
+        const mockResponse: LightsStatus = {
+          numberOfLights: 1,
+          lights: [{ on: 1, brightness: 80, temperature: 200 }],
+        }
+
+        mockClient.putMock.mockResolvedValue({
+          ok: true,
+          status: 200,
+          data: mockResponse,
+        })
+
+        const result = await keylight.setBrightness(80)
+
+        expect(mockClient.putMock).toHaveBeenCalledWith(
+          'http://192.168.1.61:9123/elgato/lights',
+          { numberOfLights: 1, lights: [{ brightness: 80 }] }
+        )
+        expect(result).toEqual(mockResponse)
+      })
+
+      test('validates brightness range', async () => {
+        setup()
+        await expect(keylight.setBrightness(-5)).rejects.toThrow(
+          KeylightValidationError
+        )
+        await expect(keylight.setBrightness(150)).rejects.toThrow(
+          KeylightValidationError
+        )
+      })
+    })
+
+    describe('setTemperatureKelvin', () => {
+      test('sets temperature in Kelvin', async () => {
+        setup()
+        const mockResponse: LightsStatus = {
+          numberOfLights: 1,
+          lights: [{ on: 1, brightness: 50, temperature: 240 }],
+        }
+
+        mockClient.putMock.mockResolvedValue({
+          ok: true,
+          status: 200,
+          data: mockResponse,
+        })
+
+        const result = await keylight.setTemperatureKelvin(4000)
+
+        expect(mockClient.putMock).toHaveBeenCalledWith(
+          'http://192.168.1.61:9123/elgato/lights',
+          { numberOfLights: 1, lights: [{ temperature: 240 }] }
+        )
+        expect(result).toEqual(mockResponse)
+      })
+
+      test('validates Kelvin range', async () => {
+        setup()
+        await expect(keylight.setTemperatureKelvin(2000)).rejects.toThrow(
+          KeylightValidationError
+        )
+        await expect(keylight.setTemperatureKelvin(8000)).rejects.toThrow(
+          KeylightValidationError
+        )
+      })
+    })
+
+    describe('setTemperature', () => {
+      test('sets temperature in API format', async () => {
+        setup()
+        const mockResponse: LightsStatus = {
+          numberOfLights: 1,
+          lights: [{ on: 1, brightness: 50, temperature: 200 }],
+        }
+
+        mockClient.putMock.mockResolvedValue({
+          ok: true,
+          status: 200,
+          data: mockResponse,
+        })
+
+        const result = await keylight.setTemperature(200)
+
+        expect(mockClient.putMock).toHaveBeenCalledWith(
+          'http://192.168.1.61:9123/elgato/lights',
+          { numberOfLights: 1, lights: [{ temperature: 200 }] }
+        )
+        expect(result).toEqual(mockResponse)
+      })
+
+      test('validates temperature range', async () => {
+        setup()
+        await expect(keylight.setTemperature(100)).rejects.toThrow(
+          KeylightValidationError
+        )
+        await expect(keylight.setTemperature(500)).rejects.toThrow(
+          KeylightValidationError
+        )
+      })
+    })
+
+    describe('setLight', () => {
+      test('sets multiple properties at once', async () => {
+        setup()
+        const mockResponse: LightsStatus = {
+          numberOfLights: 1,
+          lights: [{ on: 1, brightness: 75, temperature: 250 }],
+        }
+
+        mockClient.putMock.mockResolvedValue({
+          ok: true,
+          status: 200,
+          data: mockResponse,
+        })
+
+        const result = await keylight.setLight({
+          on: 1,
+          brightness: 75,
+          temperature: 250,
+        })
+
+        expect(mockClient.putMock).toHaveBeenCalledWith(
+          'http://192.168.1.61:9123/elgato/lights',
+          {
+            numberOfLights: 1,
+            lights: [{ on: 1, brightness: 75, temperature: 250 }],
+          }
+        )
+        expect(result).toEqual(mockResponse)
+      })
+    })
+  })
+})
